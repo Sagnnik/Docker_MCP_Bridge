@@ -89,6 +89,7 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "openai" },
     { name = "python-dotenv" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -96,6 +97,7 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.123.8" },
     { name = "openai", specifier = ">=2.8.1" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [[package]]

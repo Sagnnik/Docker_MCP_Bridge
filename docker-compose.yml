@@ -1,11 +1,14 @@
 services:
-  gateway:
-    image: docker/mcp-gateway
-    command:
-      - --servers=duckduckgo
-      - --transport=sse
-      - --port=8811
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+  mcp-gateway:
+    image: docker/mcp-gateway:latest
     ports:
       - "8811:8811"
+    use_api_socket: true
+    command:
+      - --transport=streaming
+      - --port=8811
+      - --servers=wikipedia-mcp
+      - --verbose=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped 
