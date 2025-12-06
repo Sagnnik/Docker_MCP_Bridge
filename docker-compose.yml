@@ -7,7 +7,6 @@ services:
     command:
       - --transport=streaming
       - --port=8811
-      - --servers=wikipedia-mcp
       - --verbose=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
