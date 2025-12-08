@@ -1,8 +1,5 @@
-import os
 import httpx
-import asyncio
 import json
-import copy
 from typing import Optional, List, Dict, Any
 from utils import parse_sse_json
 
@@ -96,15 +93,15 @@ class MCPGatewayClient:
             for tool in tools:
                 self.available_tools[tool["name"]] = tool
 
-            print(f"Loaded {len(self.available_tools)} tools from MCP Gateway")
+            #print(f"Loaded {len(self.available_tools)} tools from MCP Gateway")
 
             if "mcp-find" in self.available_tools and 'mcp-add' in self.available_tools and 'mcp-remove' in self.available_tools:
                 self.dynamic_tools_enabled = True
-                print("Docker Dynamic Tools (mcp-find, mcp-add, mcp-remove) available")
+                #print("Docker Dynamic Tools (mcp-find, mcp-add, mcp-remove) available")
 
             if "code-mode" in self.available_tools:
                 self.code_mode_enabled = True
-                print("Docker code-mode available")
+                #print("Docker code-mode available")
             
             return tools
         except Exception as e:
@@ -155,12 +152,12 @@ class MCPGatewayClient:
             print(f"Error finding MCP servers: {e}")
             return []
 
-    async def add_mcp_servers(self, client: httpx.AsyncClient, server_name:str):
+    async def add_mcp_servers(self, client: httpx.AsyncClient, server_name:str, activate:bool=True):
         if not self.dynamic_tools_enabled:
             return False
         
         try:
-            result = await self.call_tool(client=client, name="mcp-add", arguments={"name": server_name})
+            result = await self.call_tool(client=client, name="mcp-add", arguments={"name": server_name, "activate": activate})
             if result.get('content'):
                 if server_name not in self.active_servers:
                     self.active_servers.append(server_name)
@@ -172,6 +169,7 @@ class MCPGatewayClient:
             return False
         
     async def remove_mcp_servers(self, client: httpx.AsyncClient, server_name: str):
+        # this is not working
         if not self.dynamic_tools_enabled:
             return False
         

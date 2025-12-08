@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 from utils import parse_sse_json
 from mcp_host import MCPGatewayClient
-from prompts import SYSTEM_MESSAGES
+from prompts import SYSTEM_MESSAGES, LLM_TOOL_SCHEMAS
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -21,88 +21,67 @@ def extract_text_from_content(content_items: List[Dict]) -> str:
             text_parts.append(item['text'])
     return "\n".join(text_parts) if text_parts else json.dumps(content_items)
 
-def fix_openai_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Fix schema issues that OpenAI API doesn't support.
-    Specifically handles type arrays like ['string', 'number', 'boolean', 'object', 'array']
-    """
-    if isinstance(schema, dict):
-        # If 'type' is a list, convert appropriately
-        if 'type' in schema and isinstance(schema['type'], list):
-            # Remove 'null' from type list if present
-            types = [t for t in schema['type'] if t != 'null']
-            
-            if len(types) == 1:
-                # Only one type, use it directly
-                schema['type'] = types[0]
-            elif 'object' in types:
-                # If object is one of the types, prefer it
-                schema['type'] = 'object'
-            elif 'array' in types:
-                # If array is one of the types, prefer it
-                schema['type'] = 'array'
-            elif 'string' in types:
-                # Default to string for primitive mixed types
-                schema['type'] = 'string'
-            else:
-                # Fallback to object
-                schema['type'] = 'object'
-            
-            # Add note about accepting multiple types
-            if len(schema['type']) > 1 or 'null' in schema.get('type', []):
-                if 'description' in schema:
-                    schema['description'] += ' (accepts multiple types)'
-                else:
-                    schema['description'] = 'Accepts multiple types'
-        
-        # Remove 'items' if type is not 'array'
-        if 'items' in schema and schema.get('type') != 'array':
-            del schema['items']
-        
-        # Recursively fix nested properties
-        if 'properties' in schema:
-            for key, value in schema['properties'].items():
-                schema['properties'][key] = fix_openai_schema(value)
-        
-        # Fix items in arrays
-        if 'items' in schema and isinstance(schema['items'], dict):
-            schema['items'] = fix_openai_schema(schema['items'])
-    
-    return schema
-
 def tool_schema_conversion(mcp_tools: List[Dict[str, Any]], mode: str='default'):
     """
     Convert MCP tool definitions to OpenAI function tools
     Now handles dynamic MCP tools (mcp-find, mcp-add, mcp-remove) and code-mode
+    Modes: 
+    - default: Added servers in docker compose
+    - dynamic: tool search tool
+    - code: LLM creates custom tool
     """    
     tools: List[Dict[str, Any]] = []
 
-    exposed_tools = {'mcp-find', 'code-mode', 'mcp-exec'}
+    dynamic_tools = {'mcp-find'}
+    code_mode_tools = {'code-mode', 'mcp-exec'}
+    exposed_tools = dynamic_tools | code_mode_tools
+
+    def is_custom(name:str):
+        return name.startswith("code-mode-") and name not in {"code-mode"}
+    
+    def should_expose(name:str):
+        if mode == 'default':
+            if name in exposed_tools:
+                return False
+            if is_custom(name):
+                return False
+            return True
+        
+        elif mode == 'dynamic':
+            if name in code_mode_tools:
+                return False
+            if is_custom(name):
+                return False
+            return True
+        elif mode == 'code':
+            if name in exposed_tools:
+                return True
+            if is_custom(name):
+                return True
+            return False
+        else:
+            return ValueError(f"Unknown Mode: {mode}")
+        
 
     for t in mcp_tools:
         name = t.get('name')
-        if not name:
+        if not name or not should_expose(name):
             continue
 
-        if mode == "default":
-            # In default mode, exclude all dynamic tools
-            if name in exposed_tools:
-                continue
-        elif mode in ["dynamic", "code"]:
-            # In dynamic and code modes, only expose specific tools
-            if name not in exposed_tools:
-                continue
-
         description = t.get("description", "")
-        input_schema = copy.deepcopy(t.get("inputSchema", {})) or {}
-
-        if input_schema.get('type') is None:
-            input_schema['type'] = 'object'
-        if 'properties' not in input_schema:
-            input_schema['properties'] = {}
-        input_schema.setdefault("additionalProperties", False)
-
-        input_schema = fix_openai_schema(input_schema)
+        
+        # Use cleaner schemas for dynamic mcps
+        if name in LLM_TOOL_SCHEMAS:
+            input_schema = copy.deepcopy(LLM_TOOL_SCHEMAS[name])
+        else:
+            # For other tools, use original schema with fixes
+            input_schema = copy.deepcopy(t.get("inputSchema", {})) or {}
+            
+            if input_schema.get('type') is None:
+                input_schema['type'] = 'object'
+            if 'properties' not in input_schema:
+                input_schema['properties'] = {}
+            input_schema.setdefault("additionalProperties", False)
 
         tools.append(
             {
@@ -114,6 +93,7 @@ def tool_schema_conversion(mcp_tools: List[Dict[str, Any]], mode: str='default')
                 }
             }
         )
+    
     return tools
 
 async def gpt_with_mcp(user_message: str, max_iterations: int=10, mode: str="default", initial_servers: List[str]=None):
@@ -219,7 +199,11 @@ async def gpt_with_mcp(user_message: str, max_iterations: int=10, mode: str="def
                             # Auto-add the first server found
                             if servers and len(servers) > 0:
                                 print(f"Auto-adding first server: {servers[0]}")
-                                await mcp.add_mcp_servers(client, servers[0])
+                                if mode == 'dynamic':
+                                    activate=True
+                                if mode == 'code':
+                                    activate=False
+                                await mcp.add_mcp_servers(client, servers[0], activate)
                                 tools_changed = True
                             
                             result_text = json.dumps({"servers": servers})
@@ -269,6 +253,7 @@ async def gpt_with_mcp(user_message: str, max_iterations: int=10, mode: str="def
                             else:
                                 result_text = json.dumps(tool_result)
 
+                        print(f"\n=== Result Text after {iteration+1} ===\n")
                         print(f"Tool result preview: {result_text[:200]}...")
 
                         messages.append({
@@ -299,7 +284,7 @@ async def gpt_with_mcp(user_message: str, max_iterations: int=10, mode: str="def
             # Unexpected finish reason
             print(f"Unexpected finish_reason: {finish_reason}")
             break
-
+            
         return {
             "content": "Maximum iterations reached without completion",
             "messages": messages,
@@ -338,7 +323,7 @@ if __name__ == "__main__":
         """Test with code-mode for custom tools"""
         print("\n=== Testing Code Mode ===\n")
         answer = await gpt_with_mcp(
-            user_message="Create a custom tool that fetches information about multiple topics from wikipedia-mcp and combines them into a summary.",
+            user_message="Create a custom tool that fetches information about multiple topics from wikipedia-mcp and combines them into a summary. Then search for deep learning and give me the final summary",
             max_iterations=10,
             mode="code",
             initial_servers=["wikipedia-mcp"]

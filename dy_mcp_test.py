@@ -28,44 +28,49 @@ async def dynamic_mcp_test():
     async with httpx.AsyncClient(timeout=300) as client:
         await mcp.initialize(client)
         await mcp.list_tools(client)
-
         servers = await mcp.find_mcp_servers(client=client, query="wikipedia-mcp")
         server_name = servers[0]['name']
         print("\n=== SERVERS ===")
         print(servers)
+        
+        add_mcp_result = await mcp.add_mcp_servers(client=client, server_name=server_name)
+        
+        await asyncio.sleep(2)
+        print("\n=== ADD MCP ===")
+        print(add_mcp_result)
+
+        tools = await mcp.list_tools(client)
+        print("\n===Printing initial tools output===\n")
+        print(tools)
+        exit(0)
+
+        create_result = await mcp.create_dynamic_code_tool(
+            client=client,
+            code='',
+            name="wiki-test",
+            servers=[server_name],
+            timeout=30
+        )   # This creates a text (.md) result of tool descriptions available in the mcp server as a reference for the LLM
+        print("\n=== Create Tool Result ===")
+        print(create_result)
+        tool_name = create_result["tool_name"]
+
+        result = await mcp.execute_dynamic_code_tool(
+            client=client,
+            tool_name=tool_name,
+            script=script
+        )
+        
+        print("\n=== RUNNING JS CODE ===")
+        content_text = result['content'][0]['text']
+        
         try:
-            add_mcp_result = await mcp.add_mcp_servers(client=client, server_name=server_name)
-            await asyncio.sleep(2)
-            print("\n=== ADD MCP ===")
-            print(add_mcp_result)
-
-            create_result = await mcp.create_dynamic_code_tool(
-                client=client,
-                code='',
-                name="wiki-test",
-                servers=[server_name],
-                timeout=30
-            )   # This creates a text (.md) result of tool descriptions available in the mcp server as a reference for the LLM
-            print("\n=== Create Tool Result ===")
-            print(create_result)
-            tool_name = create_result["tool_name"]
-
-            result = await mcp.execute_dynamic_code_tool(
-                client=client,
-                tool_name=tool_name,
-                script=script
-            )
-            
-            print("\n=== RUNNING JS CODE ===")
-            content_text = result['content'][0]['text']
-            
-            try:
-                parsed = json.loads(content_text)
-                print(json.dumps(parsed, indent=2))
-            except:
-                print(content_text)
-        finally:
-            await mcp.remove_mcp_servers(client=client, server_name=server_name)
+            parsed = json.loads(content_text)
+            print(json.dumps(parsed, indent=2))
+        except:
+            print(content_text)
+        # finally:
+        #     await mcp.remove_mcp_servers(client=client, server_name=server_name)
 
 
 if __name__ == "__main__":
