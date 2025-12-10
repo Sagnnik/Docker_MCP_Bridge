@@ -1,11 +1,6 @@
-from mcp_host import MCPGatewayClient
-import httpx
-import asyncio
-import json
 import subprocess
-import sys
 import getpass
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 def parse_secret_key(secret_full_key: str):
     """
