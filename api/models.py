@@ -23,6 +23,9 @@ class MCPServerConfig(BaseModel):
 class MCPRemoveRequest(BaseModel):
     name:str
 
+class MCPFindRequest(BaseModel):
+    query: str
+
 class ChatResponse(BaseModel):
     content: str
     active_servers: List[str]

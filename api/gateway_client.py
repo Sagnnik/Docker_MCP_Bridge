@@ -12,7 +12,7 @@ class MCPGatewayAPIClient:
         self._next_id = 1
         self.available_tools: Dict[str, Dict] = {}
         self.active_servers: List[str] = []
-        self._client = Optional[httpx.AsyncClient] = None
+        self._client: Optional[httpx.AsyncClient] = None
 
     async def __aenter__(self):
         self._client = httpx.AsyncClient(timeout=300)

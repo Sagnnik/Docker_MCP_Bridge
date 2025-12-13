@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from provider import LLMProviderFactory
-from models import ChatResponse, ChatRequest, MCPServerConfig, MCPRemoveRequest
+from models import ChatResponse, ChatRequest, MCPServerConfig, MCPRemoveRequest, MCPFindRequest
 from gateway_client import MCPGatewayAPIClient
 from logger import logger
 import json
@@ -235,8 +235,37 @@ async def chat_stream(request: ChatRequest):
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+@app.post("/mcp/find", tags=["mcp"])
+async def find_mcp_server(request: MCPFindRequest):
+    """
+    Discover available MCP servers using `mcp-find`.
+
+    Example:
+    ```json
+    {
+        "query": "github"
+    }
+    ```
+    """
+    try:
+        async with MCPGatewayAPIClient() as client:
+            result = await client.call_tool(
+                "mcp-find",
+                {"query": request.query}
+            )
+
+            return {
+                "status": "success",
+                "query": request.query,
+                "servers": result
+            }
+
+    except Exception as e:
+        logger.error(f"Find MCP server error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/mcp/add", tags=['mcp'])
-async def add_mcp_server(config: MCPServerConfig):
+async def add_mcp_server(config: MCPServerConfig = Body(..., media_type="application/json")):
     """
     Add an MCP server
     
